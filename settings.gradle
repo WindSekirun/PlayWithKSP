@@ -14,3 +14,5 @@ dependencyResolutionManagement {
 }
 rootProject.name = "PlayWithKSP"
 include ':app'
+include ':annotation'
+include ':processor'
