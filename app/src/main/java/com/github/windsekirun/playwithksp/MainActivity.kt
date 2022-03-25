@@ -1,22 +1,39 @@
 package com.github.windsekirun.playwithksp
 
 import android.os.Bundle
-import com.google.android.material.snackbar.Snackbar
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
-import androidx.navigation.findNavController
-import androidx.navigation.ui.AppBarConfiguration
-import androidx.navigation.ui.navigateUp
-import androidx.navigation.ui.setupActionBarWithNavController
-import android.view.Menu
-import android.view.MenuItem
+import com.afollestad.materialdialogs.MaterialDialog
 import com.github.windsekirun.playwithksp.databinding.ActivityMainBinding
+import dagger.hilt.android.AndroidEntryPoint
 
+@AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
+    private val viewModel: MainViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        setUpViews()
+        setUpObservers()
+
+        viewModel.init()
+    }
+
+    private fun setUpViews() {
+
+    }
+
+    private fun setUpObservers() {
+        viewModel.errorData.observe(this) {
+            MaterialDialog(this).show {
+                title(text = "error happened")
+                message(text = it.message)
+                positiveButton {  }
+            }
+        }
     }
 }
