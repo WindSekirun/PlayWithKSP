@@ -12,6 +12,7 @@ import com.google.devtools.ksp.symbol.KSVisitorVoid
 import com.google.devtools.ksp.validate
 import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.plusParameter
+import com.squareup.kotlinpoet.ksp.toClassName
 import com.squareup.kotlinpoet.ksp.writeTo
 
 internal class NeedValidateCompiler(
@@ -56,10 +57,18 @@ internal class NeedValidateCompiler(
 
         action.needCheckList.forEach { (type, name) ->
             val statement = when (type) {
-                "String" -> "if·(request.$name.isNullOrEmpty())·throw·%T(\"$name is null/empty\")"
-                else -> "if·(request.$name·==·null)·throw·%T(\"$name is null\")"
+                "String" -> "if·(request.$name.isNullOrEmpty())·throw·%T(\"$name·is·null/empty\")"
+                else -> "if·(request.$name·==·null)·throw·%T(\"$name·is·null\")"
             }
             validateBuilder.addStatement(statement, RuntimeException::class)
+        }
+
+        if (action.hasValidateCondition) {
+            validateBuilder.addStatement(
+                "if·(!request.isValidate)·throw·%T(%P)",
+                RuntimeException::class,
+                "\${request.nonValidateMessage}"
+            )
         }
 
         validateBuilder.addStatement("return request")
@@ -134,9 +143,19 @@ internal class NeedValidateCompiler(
 
             val originQualifiedName = classDeclaration.qualifiedName?.asString().orEmpty()
 
+            val hasCondition =
+                classDeclaration.superTypes.any {
+                    it.resolve().toClassName() == ValidateCondition::class.asClassName()
+                }
+
             // exclude @OptionalValue attached property (doesn't check in validator)
             val needCheckList =
                 classDeclaration.getAllProperties()
+                    .filterNot {
+                        hasCondition &&
+                                (it.simpleName.asString() == "isValidate" ||
+                                        it.simpleName.asString() == "nonValidateMessage")
+                    }
                     .filterNot { it.isAnnotationPresent(OptionalValue::class) }
                     .map { property ->
                         val type = property.type.resolve().toString()
@@ -145,11 +164,11 @@ internal class NeedValidateCompiler(
                     }
                     .toList()
 
-
             actionList += Action(
                 originQualifiedName,
                 className,
                 needCheckList,
+                hasCondition,
                 classDeclaration.containingFile
             )
         }
@@ -159,6 +178,7 @@ internal class NeedValidateCompiler(
         val originQualifiedName: String,
         val validatorSimpleName: String,
         val needCheckList: List<Pair<String, String>>,
+        val hasValidateCondition: Boolean,
         val file: KSFile?
     )
 

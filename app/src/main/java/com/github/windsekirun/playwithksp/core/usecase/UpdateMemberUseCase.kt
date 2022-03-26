@@ -5,6 +5,7 @@ import com.github.windsekirun.playwithksp.annotation.OptionalValue
 import com.github.windsekirun.playwithksp.base.RequestValidator
 import com.github.windsekirun.playwithksp.base.UseCase
 import com.github.windsekirun.playwithksp.core.repository.PreferenceRepository
+import com.github.windsekirun.playwithksp.processor.check.ValidateCondition
 import javax.inject.Inject
 
 class UpdateMemberUseCase @Inject constructor(
@@ -22,5 +23,8 @@ class UpdateMemberUseCase @Inject constructor(
         val id: String,
         val pw: String,
         @OptionalValue val age: String
-    )
+    ): ValidateCondition {
+        override val isValidate: Boolean
+            get() = pw.length >= 7
+    }
 }
