@@ -55,20 +55,11 @@ internal class NeedValidateCompiler(
         )
 
         action.needCheckList.forEach { (type, name) ->
-            when (type) {
-                "String" -> {
-                    validateBuilder.addStatement(
-                        "if·(request.$name.isNullOrEmpty())·throw·%T(\"$name is null\")",
-                        RuntimeException::class
-                    )
-                }
-                else -> {
-                    validateBuilder.addStatement(
-                        "if·(request.$name·==·null)·throw·%T(\"$name is null\")",
-                        RuntimeException::class
-                    )
-                }
+            val statement = when (type) {
+                "String" -> "if·(request.$name.isNullOrEmpty())·throw·%T(\"$name is null/empty\")"
+                else -> "if·(request.$name·==·null)·throw·%T(\"$name is null\")"
             }
+            validateBuilder.addStatement(statement, RuntimeException::class)
         }
 
         validateBuilder.addStatement("return request")
