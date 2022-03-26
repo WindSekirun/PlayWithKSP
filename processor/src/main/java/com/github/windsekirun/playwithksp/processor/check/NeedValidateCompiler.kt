@@ -84,7 +84,7 @@ internal class NeedValidateCompiler(
         // write file
         FileSpec.builder(packageName, action.validatorSimpleName)
             .addType(typeSpec)
-            .addComment("[NeedValidateCompiler] This file is the generated file. DO NOT TRY MODIFY THIS FILE.")
+            .addComment("[NeedValidateCompiler] This file is the generated file. DO NOT MODIFY THIS FILE.")
             .build()
             .writeTo(codeGenerator, Dependencies(true, requireNotNull(action.file)))
     }
