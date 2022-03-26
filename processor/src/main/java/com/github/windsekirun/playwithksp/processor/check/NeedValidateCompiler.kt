@@ -19,7 +19,7 @@ internal class NeedValidateCompiler(
     @Suppress("unused") private val logger: KSPLogger
 ) : SymbolProcessor {
     private val packageName = "$GENERATED_PACKAGE.validator"
-    private val originList = mutableListOf<Action>()
+    private val actionList = mutableListOf<Action>()
 
     override fun process(resolver: Resolver): List<KSAnnotated> {
         // find validate symbols which annotated with @CheckParam
@@ -31,15 +31,65 @@ internal class NeedValidateCompiler(
 
         symbols.forEach { it.accept(Visitor(), Unit) }
 
-        if (originList.isNotEmpty()) {
-            generateMetadata()
+        if (actionList.isNotEmpty()) {
+            actionList.forEach { generateValidator(it) }
+            generateValidators()
         }
 
         // pass non-validate symbols which doesn't processed on this round
         return symbols.filterNot { it.validate() }.toList()
     }
 
-    private fun generateMetadata() {
+    private fun generateValidator(action: Action) {
+        // build validate method
+        val originModelClass = ClassName.bestGuess(action.originQualifiedName)
+        val validateBuilder = FunSpec.builder("validate")
+            .returns(originModelClass)
+            .addModifiers(KModifier.OVERRIDE)
+            .addParameter(ParameterSpec.builder("request", originModelClass.asNullable).build())
+
+        // check model is null (after this check, request can't be null)
+        validateBuilder.addStatement(
+            "if·(request·==·null)·throw·%T(\"request is null\")",
+            RuntimeException::class
+        )
+
+        action.needCheckList.forEach { (type, name) ->
+            when (type) {
+                "String" -> {
+                    validateBuilder.addStatement(
+                        "if·(request.$name.isNullOrEmpty())·throw·%T(\"$name is null\")",
+                        RuntimeException::class
+                    )
+                }
+                else -> {
+                    validateBuilder.addStatement(
+                        "if·(request.$name·==·null)·throw·%T(\"$name is null\")",
+                        RuntimeException::class
+                    )
+                }
+            }
+        }
+
+        validateBuilder.addStatement("return request")
+
+        val validatorInterface = Validator::class.asClassName().plusParameter(originModelClass)
+
+        // build object class contains 'validate' function
+        val typeSpec = TypeSpec.classBuilder(action.validatorSimpleName)
+            .addFunction(validateBuilder.build())
+            .addSuperinterface(validatorInterface)
+            .build()
+
+        // write file
+        FileSpec.builder(packageName, action.validatorSimpleName)
+            .addType(typeSpec)
+            .addComment("[NeedValidateCompiler] This file is the generated file. DO NOT TRY MODIFY THIS FILE.")
+            .build()
+            .writeTo(codeGenerator, Dependencies(true, requireNotNull(action.file)))
+    }
+
+    private fun generateValidators() {
         val validatorTypeVariable = Validator::class.asClassName()
             .plusParameter(TypeVariableName.invoke("T"))
 
@@ -49,10 +99,10 @@ internal class NeedValidateCompiler(
             .addTypeVariable(TypeVariableName.Companion.invoke("T"))
 
         funSpec.beginControlFlow("return when (qualifiedName)")
-        originList.forEach { (originQualifiedName, validatorName) ->
+        actionList.forEach { (originQualifiedName, validatorName) ->
             funSpec.addStatement(
                 "\"$originQualifiedName\" -> %T() as %T",
-                ClassName.bestGuess(validatorName),
+                ClassName.bestGuess("$packageName.$validatorName"),
                 validatorTypeVariable
             )
         }
@@ -70,7 +120,7 @@ internal class NeedValidateCompiler(
                     .build()
             )
 
-        val files = originList.mapNotNull { it.file }.toTypedArray()
+        val files = actionList.mapNotNull { it.file }.toTypedArray()
         FileSpec.builder(packageName, "Validators")
             .addType(typeSpec.build())
             .build()
@@ -91,66 +141,24 @@ internal class NeedValidateCompiler(
                 "${simpleName}Validator"
             }
 
-            val originModelClass =
-                ClassName.bestGuess(classDeclaration.qualifiedName?.asString().orEmpty())
-
-            // build validate method
-            val validateBuilder = FunSpec.builder("validate")
-                .returns(originModelClass)
-                .addModifiers(KModifier.OVERRIDE)
-                .addParameter(ParameterSpec.builder("request", originModelClass.asNullable).build())
-
-            // check model is null (after this check, request can't be null)
-            validateBuilder.addStatement(
-                "if·(request·==·null)·throw·%T(\"request is null\")",
-                RuntimeException::class
-            )
+            val originQualifiedName = classDeclaration.qualifiedName?.asString().orEmpty()
 
             // exclude @OptionalValue attached property (doesn't check in validator)
-            val allProperties = classDeclaration.getAllProperties()
             val needCheckList =
-                allProperties.filterNot { it.isAnnotationPresent(OptionalValue::class) }
-
-            needCheckList.forEach { property ->
-                val type = property.type.resolve()
-                val name = property.simpleName.asString()
-
-                when (type.toString()) {
-                    "String" -> {
-                        validateBuilder.addStatement(
-                            "if·(request.$name.isNullOrEmpty())·throw·%T(\"$name is null\")",
-                            RuntimeException::class
-                        )
+                classDeclaration.getAllProperties()
+                    .filterNot { it.isAnnotationPresent(OptionalValue::class) }
+                    .map { property ->
+                        val type = property.type.resolve().toString()
+                        val name = property.simpleName.asString()
+                        type to name
                     }
-                    else -> {
-                        validateBuilder.addStatement(
-                            "if·(request.$name·==·null)·throw·%T(\"$name is null\")",
-                            RuntimeException::class
-                        )
-                    }
-                }
-            }
+                    .toList()
 
-            validateBuilder.addStatement("return request")
 
-            val validatorInterface = Validator::class.asClassName().plusParameter(originModelClass)
-
-            // build object class contains 'validate' function
-            val typeSpec = TypeSpec.classBuilder(className)
-                .addFunction(validateBuilder.build())
-                .addSuperinterface(validatorInterface)
-                .build()
-
-            // write file
-            FileSpec.builder(packageName, className)
-                .addType(typeSpec)
-                .addComment("[NeedValidateCompiler] This file is the generated file. DO NOT TRY MODIFY THIS FILE.")
-                .build()
-                .writeTo(codeGenerator, Dependencies(true, classDeclaration.containingFile!!))
-
-            originList += Action(
-                originModelClass.canonicalName,
-                "${packageName}.${className}",
+            actionList += Action(
+                originQualifiedName,
+                className,
+                needCheckList,
                 classDeclaration.containingFile
             )
         }
@@ -158,7 +166,8 @@ internal class NeedValidateCompiler(
 
     private data class Action(
         val originQualifiedName: String,
-        val validatorQualifiedName: String,
+        val validatorSimpleName: String,
+        val needCheckList: List<Pair<String, String>>,
         val file: KSFile?
     )
 
