@@ -1,0 +1,1 @@
+gradle-profiler --benchmark --scenario-file build-time-scenarios.txt

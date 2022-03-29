@@ -1,0 +1,4 @@
+abi_change {
+    tasks = [":app:assembleDebug"]
+    apply-abi-change-to = ["app/src/main/java/com/github/windsekirun/playwithksp/core/usecase/UpdateMemberUseCase.kt"]
+}
