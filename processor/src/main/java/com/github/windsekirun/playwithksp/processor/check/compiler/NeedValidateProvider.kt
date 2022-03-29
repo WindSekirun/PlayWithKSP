@@ -1,4 +1,4 @@
-package com.github.windsekirun.playwithksp.processor.check
+package com.github.windsekirun.playwithksp.processor.check.compiler
 
 import com.google.devtools.ksp.processing.SymbolProcessorEnvironment
 import com.google.devtools.ksp.processing.SymbolProcessorProvider
